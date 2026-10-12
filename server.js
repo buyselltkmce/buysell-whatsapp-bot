@@ -22,11 +22,17 @@ let latestQr = null;
 let clientInfo = null;
 let lastError = null;
 
-// Initialize WhatsApp Web client
+// Initialize WhatsApp Web client with stealth and modern version caching
 const client = new Client({
   authStrategy: new LocalAuth({
     dataPath: process.env.SESSION_DATA_PATH || './.wwebjs_auth'
   }),
+  webVersionCache: {
+    type: 'remote',
+    remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1045021694-alpha.html'
+  },
+  takeoverOnConflict: true,
+  takeoverTimeoutMs: 0,
   puppeteer: {
     headless: true,
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
@@ -37,7 +43,9 @@ const client = new Client({
       '--disable-accelerated-2d-canvas',
       '--no-first-run',
       '--no-zygote',
-      '--disable-gpu'
+      '--disable-gpu',
+      '--disable-blink-features=AutomationControlled',
+      '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
     ]
   }
 });
@@ -208,26 +216,29 @@ app.get('/qr', async (req, res) => {
         <head>
           <title>Scan WhatsApp QR | Buy&Sell TKMCE</title>
           <meta name="viewport" content="width=device-width, initial-scale=1">
-          <meta http-equiv="refresh" content="20">
           <style>
             body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #0b141a; color: #e9edef; text-align: center; padding: 20px; box-sizing: border-box; }
             .card { background: #111b21; padding: 32px; border-radius: 24px; border: 1px solid #222e35; max-width: 420px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,0.6); }
             h2 { margin: 0 0 8px 0; color: #fff; font-size: 22px; }
             p { color: #8696a0; font-size: 14px; margin: 0 0 20px 0; }
             .qr-box { background: white; padding: 12px; border-radius: 16px; display: inline-block; margin-bottom: 20px; }
-            .qr-box img { display: block; width: 240px; height: 240px; }
+            .qr-box img { display: block; width: 250px; height: 250px; }
             .instructions { text-align: left; background: #182229; padding: 16px 20px; border-radius: 12px; font-size: 13px; color: #aebac1; }
             .instructions ol { margin: 0; padding-left: 20px; }
             .instructions li { margin-bottom: 6px; }
-            .timer { font-size: 11px; color: #8696a0; margin-top: 16px; }
+            .status-indicator { margin-top: 16px; font-size: 12px; color: #00a884; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; }
+            .pulse { width: 8px; height: 8px; background: #00a884; border-radius: 50%; animation: pulse 1.5s infinite; }
+            @keyframes pulse { 0% { opacity: 0.3; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.2); } 100% { opacity: 0.3; transform: scale(0.9); } }
+            .btn-refresh { margin-top: 14px; background: transparent; border: 1px solid #222e35; color: #8696a0; padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; transition: all 0.2s; }
+            .btn-refresh:hover { color: #fff; border-color: #00a884; }
           </style>
         </head>
         <body>
           <div class="card">
             <h2>Link WhatsApp Account</h2>
-            <p>Scan this QR code with the WhatsApp account used to send buyer alerts.</p>
+            <p>Scan this QR code with your WhatsApp Business or personal account.</p>
             <div class="qr-box">
-              <img src="${qrDataUrl}" alt="WhatsApp QR Code" />
+              <img id="qr-img" src="${qrDataUrl}" alt="WhatsApp QR Code" />
             </div>
             <div class="instructions">
               <ol>
@@ -236,8 +247,24 @@ app.get('/qr', async (req, res) => {
                 <li>Tap <strong>Link a Device</strong> and point your camera here</li>
               </ol>
             </div>
-            <div class="timer">🔄 Page automatically refreshes every 20 seconds</div>
+            <div class="status-indicator">
+              <span class="pulse"></span> Listening for camera connection...
+            </div>
+            <button class="btn-refresh" onclick="location.reload()">🔄 Refresh QR Code</button>
           </div>
+
+          <script>
+            // Poll health endpoint every 3 seconds; auto-reload immediately when linked
+            setInterval(async () => {
+              try {
+                const res = await fetch('/health');
+                const data = await res.json();
+                if (data.whatsappConnected) {
+                  location.reload();
+                }
+              } catch (e) {}
+            }, 3000);
+          </script>
         </body>
       </html>
     `);
