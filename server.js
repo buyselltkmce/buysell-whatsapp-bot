@@ -29,6 +29,7 @@ const client = new Client({
   }),
   puppeteer: {
     headless: true,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -136,6 +137,8 @@ app.get('/health', (req, res) => {
     whatsappConnected: isReady,
     account: clientInfo ? { name: clientInfo.pushname, phone: clientInfo.wid?.user } : null,
     uptimeSeconds: Math.floor(process.uptime()),
+    hasQr: !!latestQr,
+    lastError: lastError || null,
     timestamp: new Date().toISOString()
   });
 });
