@@ -248,12 +248,64 @@ app.get('/qr', async (req, res) => {
               </ol>
             </div>
             <div class="status-indicator">
-              <span class="pulse"></span> Listening for camera connection...
+              <span class="pulse"></span> Listening for connection...
             </div>
-            <button class="btn-refresh" onclick="location.reload()">🔄 Refresh QR Code</button>
+            
+            <div style="margin: 24px 0 16px 0; border-top: 1px solid #222e35; position: relative;">
+              <span style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #111b21; padding: 0 10px; color: #8696a0; font-size: 11px; text-transform: uppercase;">or use phone number</span>
+            </div>
+
+            <div style="background: #182229; padding: 18px; border-radius: 14px; text-align: left;">
+              <h4 style="margin: 0 0 6px 0; color: #fff; font-size: 14px;">Link with Phone Number</h4>
+              <p style="margin: 0 0 12px 0; font-size: 12px; color: #8696a0;">Recommended for WhatsApp Business accounts.</p>
+              
+              <div style="display: flex; gap: 8px;">
+                <input id="phone-input" type="tel" placeholder="e.g. 9876543210" style="flex: 1; background: #111b21; border: 1px solid #222e35; color: #fff; padding: 10px 12px; border-radius: 8px; font-size: 14px; outline: none;" />
+                <button id="get-code-btn" onclick="requestPairingCode()" style="background: #00a884; color: #fff; border: none; padding: 10px 14px; border-radius: 8px; font-weight: bold; font-size: 13px; cursor: pointer;">Get Code</button>
+              </div>
+
+              <div id="code-result" style="display: none; margin-top: 14px; padding: 12px; background: #111b21; border: 1px dashed #00a884; border-radius: 10px; text-align: center;">
+                <p style="margin: 0 0 4px 0; font-size: 11px; color: #8696a0;">Enter this code on your WhatsApp:</p>
+                <div id="code-display" style="font-size: 24px; font-weight: bold; letter-spacing: 4px; color: #00a884;"></div>
+                <p style="margin: 8px 0 0 0; font-size: 11px; color: #aebac1;">WhatsApp &gt; Linked Devices &gt; Link a Device &gt; <em>Link with phone number instead</em></p>
+              </div>
+            </div>
+
+            <button class="btn-refresh" onclick="location.reload()" style="margin-top: 20px;">🔄 Refresh Page</button>
           </div>
 
           <script>
+            async function requestPairingCode() {
+              const phone = document.getElementById('phone-input').value.trim();
+              if (!phone) return alert('Please enter your 10-digit WhatsApp number');
+              
+              const btn = document.getElementById('get-code-btn');
+              btn.innerText = 'Requesting...';
+              btn.disabled = true;
+
+              try {
+                const res = await fetch('/api/pair-code', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ phone })
+                });
+                const data = await res.json();
+                if (data.success && data.code) {
+                  document.getElementById('code-result').style.display = 'block';
+                  document.getElementById('code-display').innerText = data.code;
+                  btn.innerText = 'Done!';
+                } else {
+                  alert(data.error || 'Failed to get pairing code');
+                  btn.innerText = 'Try Again';
+                  btn.disabled = false;
+                }
+              } catch (e) {
+                alert('Connection error: ' + e.message);
+                btn.innerText = 'Try Again';
+                btn.disabled = false;
+              }
+            }
+
             // Poll health endpoint every 3 seconds; auto-reload immediately when linked
             setInterval(async () => {
               try {
@@ -270,6 +322,36 @@ app.get('/qr', async (req, res) => {
     `);
   } catch (err) {
     res.status(500).send('Error rendering QR code: ' + err.message);
+  }
+});
+
+/**
+ * @route POST /api/pair-code
+ * @desc  Generate 8-character pairing code for linking with phone number instead of QR
+ */
+app.post('/api/pair-code', async (req, res) => {
+  const { phone } = req.body;
+  if (!phone) {
+    return res.status(400).json({ success: false, error: 'Phone number is required' });
+  }
+
+  const digits = phone.replace(/\D/g, '');
+  if (!digits || digits.length < 10) {
+    return res.status(400).json({ success: false, error: 'Please enter a valid phone number with at least 10 digits' });
+  }
+
+  // Prepend 91 for Indian numbers if only 10 digits
+  const fullPhone = digits.length === 10 ? `91${digits}` : digits;
+
+  try {
+    console.log(`[Pairing] Requesting pairing code for +${fullPhone}...`);
+    const rawCode = await client.requestPairingCode(fullPhone);
+    const formattedCode = rawCode && rawCode.length === 8 ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}` : rawCode;
+    console.log(`[Pairing] Successfully generated pairing code: ${formattedCode}`);
+    return res.json({ success: true, code: formattedCode });
+  } catch (err) {
+    console.error('[Pairing Error]:', err.message);
+    return res.status(500).json({ success: false, error: err.message || 'Failed to request pairing code' });
   }
 });
 
