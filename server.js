@@ -8,6 +8,21 @@ import QRCode from 'qrcode';
 
 dotenv.config();
 
+// Prevent a single whatsapp-web.js/Puppeteer error from killing the whole process
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason?.stack || reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err?.stack || err);
+});
+
+// Log memory every 30s so out-of-memory restarts are visible in Render logs
+setInterval(() => {
+  const mb = (n) => Math.round(n / 1024 / 1024);
+  const m = process.memoryUsage();
+  console.log(`[memory] rss=${mb(m.rss)}MB heapUsed=${mb(m.heapUsed)}MB`);
+}, 30000);
+
 const app = express();
 app.use(cors());
 app.use(express.json());
