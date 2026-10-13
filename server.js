@@ -146,12 +146,89 @@ async function initWhatsApp() {
       }
     });
 
+    // Listen for incoming agent WhatsApp replies (1 / 2 / pick / drop)
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+      try {
+        if (type !== 'notify' || !messages || !messages.length) return;
+        for (const msg of messages) {
+          if (!msg.message || msg.key?.fromMe) continue;
+
+          const text =
+            msg.message.conversation ||
+            msg.message.extendedTextMessage?.text ||
+            '';
+
+          if (!text || !text.trim()) continue;
+
+          // Check if message looks like a pick / drop reply (1, 2, pick, drop)
+          const isPickDrop = /^\s*(1|2|pick|drop)\b/i.test(text.trim());
+          if (!isPickDrop) continue;
+
+          let rawJid = msg.key.remoteJid || '';
+          if (rawJid.endsWith('@lid') && msg.key.remoteJidAlt) {
+            rawJid = msg.key.remoteJidAlt;
+          }
+          const digits = rawJid.replace(/\D/g, '');
+          const phone = digits.length >= 10 ? digits.slice(-10) : digits;
+          if (!phone || phone.length !== 10) continue;
+
+          const quotedMessageId =
+            msg.message.extendedTextMessage?.contextInfo?.stanzaId || null;
+
+          console.log(`[Incoming Reply] Received "${text.trim()}" from ${phone} (quoted: ${quotedMessageId || 'none'})`);
+
+          const backendUrl = process.env.BACKEND_API_URL || process.env.BACKEND_URL || 'https://buysell-tkmce-backend.onrender.com';
+          const endpoint = `${backendUrl.replace(/\/+$/, '')}/api/whatsapp/incoming-reply`;
+
+          try {
+            const resp = await fetch(endpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${API_SECRET}`
+              },
+              body: JSON.stringify({
+                phone,
+                text: text.trim(),
+                quotedMessageId
+              }),
+              signal: AbortSignal.timeout(15000)
+            });
+
+            const resData = await resp.json().catch(() => ({}));
+            console.log(`[Incoming Reply Result] Backend response:`, resData);
+          } catch (postErr) {
+            console.error(`[Incoming Reply Error] Failed to forward to backend:`, postErr.message);
+          }
+        }
+      } catch (err) {
+        console.error('[messages.upsert error]', err);
+      }
+    });
+
   } catch (err) {
     console.error('❌ Failed to initialize Baileys:', err);
     lastError = err.message;
     setTimeout(initWhatsApp, 5000);
   }
 }
+
+// Periodic sweep ping to backend to ensure 24h escalation triggers reliably
+setInterval(async () => {
+  try {
+    const backendUrl = process.env.BACKEND_API_URL || process.env.BACKEND_URL || 'https://buysell-tkmce-backend.onrender.com';
+    await fetch(`${backendUrl.replace(/\/+$/, '')}/api/whatsapp/sweep`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_SECRET}`
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+  } catch (e) {
+    // Non-critical ping
+  }
+}, 10 * 60 * 1000);
 
 // Start WhatsApp
 initWhatsApp();
