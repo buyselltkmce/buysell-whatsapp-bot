@@ -236,6 +236,14 @@ initWhatsApp();
 // ================= ROUTES ================= //
 
 /**
+ * @route GET /
+ * @desc  Redirect root to QR code linking page
+ */
+app.get('/', (req, res) => {
+  res.redirect('/qr');
+});
+
+/**
  * @route GET /health
  * @desc  Health check endpoint for Render keep-alive (Cron-job.org / UptimeRobot)
  */
